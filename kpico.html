@@ -4016,9 +4016,29 @@ function splitPalletFreeRect(rect, packedW, packedD) {
 }
 
 // 同一层只混装等高箱体，保持层面平整；二维格位为互不重叠的自由矩形。
-function packMixedFlatLayer(palletW, palletD, cargoStates, targetHeight, boxGap, remainingLoadKg = Infinity) {
-    const gap = Math.max(0, Number(boxGap) || 0);
-    const freeRects = [{ x: 0, z: 0, w: palletW + gap, d: palletD + gap }];
+// 修复（多起点择优 + 支撑基底约束）：
+// 1. 多起点择优：同一层跑多种贪心变体（朝向顺序反转 × 打分变体），单一货型时补"双区域条带枚举"，取 usedArea 最大者，解决每层稳定漏装 20%~27% 的问题。
+// 2. 支撑基底约束：传入 lowerPlacements（下层占位矩形）时，先在"下层箱顶并集"内排布（天然 100% 支撑），再在托盘剩余空间做放宽排布（要求支撑率 ≥ minSupportRatio），彻底消除层间悬空。
+// 3. 每个落点记录 support（0~1，被下层箱顶覆盖的比例），供 3D 标色与校验使用。
+const PALLET_LAYER_MIN_SUPPORT = 0.9;   // 放宽阶段单箱最低支撑率
+function calcPalletSupportRatio(x, z, w, d, supportRects) {
+    if (!supportRects || !supportRects.length) return 1;
+    let covered = 0;
+    for (const r of supportRects) {
+        const ox = Math.min(x + w, r.x + r.w) - Math.max(x, r.x);
+        const oz = Math.min(z + d, r.z + r.d) - Math.max(z, r.z);
+        if (ox > 0 && oz > 0) covered += ox * oz;
+    }
+    return Math.max(0, Math.min(1, covered / (w * d)));
+}
+
+// 贪心排布核心（支持自定义初始自由矩形 / 朝向顺序 / 打分变体 / 支撑约束）
+function packPalletLayerGreedy(palletW, palletD, cargoStates, targetHeight, gap, remainingLoadKg, initFreeRects, opts = {}) {
+    const optionOrder = opts.optionOrder || 0;
+    const scoreMode = opts.scoreMode || 0;
+    const supportRects = opts.supportRects || null;
+    const minSupport = supportRects ? (opts.minSupport || 1) : 0;
+    const freeRects = initFreeRects.map(r => ({ ...r }));
     const localRemaining = cargoStates.map(state => Math.max(0, Number(state.remaining) || 0));
     const placements = [];
     const usedCounts = new Map();
@@ -4032,19 +4052,26 @@ function packMixedFlatLayer(palletW, palletD, cargoStates, targetHeight, boxGap,
             if (localRemaining[stateIndex] <= 0) continue;
             const unitWeight = Math.max(0, Number(state.item.weight) || 0);
             if (unitWeight > 0 && usedWeightKg + unitWeight > remainingLoadKg + 0.001) continue;
-            for (const option of getPalletFootprintOptions(state.item)) {
+            let options = getPalletFootprintOptions(state.item);
+            if (optionOrder === 1) options = [...options].reverse();
+            for (const option of options) {
                 if (Math.abs(option.fh - targetHeight) > 0.001) continue;
                 const packedW = option.fw + gap;
                 const packedD = option.fd + gap;
                 for (let rectIndex = 0; rectIndex < freeRects.length; rectIndex++) {
                     const rect = freeRects[rectIndex];
                     if (packedW > rect.w + 0.001 || packedD > rect.d + 0.001) continue;
+                    const support = supportRects ? calcPalletSupportRatio(rect.x, rect.z, option.fw, option.fd, supportRects) : 1;
+                    if (supportRects && support < minSupport - 1e-9) continue;
                     const area = option.fw * option.fd;
                     const waste = rect.w * rect.d - packedW * packedD;
                     const shortSide = Math.min(rect.w - packedW, rect.d - packedD);
-                    const score = area * 1e6 - waste * 100 - shortSide;
+                    const longSide = Math.max(rect.w - packedW, rect.d - packedD);
+                    let score = area * 1e6 - waste * 100 - shortSide;
+                    if (scoreMode === 1) score = area * 1e6 - waste * 100 + shortSide;
+                    if (scoreMode === 2) score = area * 1e6 - waste * 100 - longSide;
                     if (!best || score > best.score) {
-                        best = { stateIndex, state, option, rectIndex, rect, packedW, packedD, score };
+                        best = { stateIndex, state, option, rectIndex, rect, packedW, packedD, score, support };
                     }
                 }
             }
@@ -4060,7 +4087,8 @@ function packMixedFlatLayer(palletW, palletD, cargoStates, targetHeight, boxGap,
             z: best.rect.z,
             fw: best.option.fw,
             fd: best.option.fd,
-            fh: best.option.fh
+            fh: best.option.fh,
+            support: best.support
         });
         localRemaining[best.stateIndex]--;
         usedCounts.set(best.stateIndex, (usedCounts.get(best.stateIndex) || 0) + 1);
@@ -4069,6 +4097,137 @@ function packMixedFlatLayer(palletW, palletD, cargoStates, targetHeight, boxGap,
     }
 
     return { placements, usedCounts, usedArea, usedWeightKg };
+}
+
+// 单一货型的"双区域条带枚举"：沿托盘深度方向切一条带铺朝向 a，剩余区域用朝向 b（或其旋转）网格铺满，枚举条带行数取最优。
+function packPalletLayerStripes(palletW, palletD, cargoStates, targetHeight, gap, remainingLoadKg) {
+    const active = cargoStates.filter(state =>
+        (Number(state.remaining) || 0) > 0 &&
+        getPalletFootprintOptions(state.item).some(o => Math.abs(o.fh - targetHeight) <= 0.001));
+    if (active.length !== 1) return null;
+    const state = active[0];
+    const stateIndex = cargoStates.indexOf(state);
+    const os = getPalletFootprintOptions(state.item).filter(o => Math.abs(o.fh - targetHeight) <= 0.001);
+    const options = os.length >= 2 ? [os[0], os[1]] : os.length === 1 ? [os[0]] : [];
+    if (options.length < 1) return null;
+    const pairs = options.length >= 2 ? [[options[0], options[1]], [options[1], options[0]]] : [[options[0], options[0]]];
+    const unitWeight = Math.max(0, Number(state.item.weight) || 0);
+
+    let best = null;
+    for (const [a, b] of pairs) {
+        const rowsA = Math.floor((palletD + gap) / (a.fd + gap));
+        for (let r = 1; r <= rowsA; r++) {
+            const usedA = r * Math.floor((palletW + gap) / (a.fw + gap));
+            const restD = palletD - (r * a.fd + (r - 1) * gap) - gap;
+            if (restD + 1e-9 < 0) break;
+            // 剩余区域尝试 b 的两种旋转
+            for (const o of [b, { fw: b.fd, fd: b.fw, fh: b.fh }]) {
+                if (Math.abs(o.fh - targetHeight) > 0.001) continue;
+                const rowsB = restD >= 0 ? Math.floor((restD + gap) / (o.fd + gap)) : 0;
+                if (rowsB < 1) continue;
+                const usedB = rowsB * Math.floor((palletW + gap) / (o.fw + gap));
+                const total = usedA + usedB;
+                if (total <= 0) continue;
+                const usedArea = usedA * a.fw * a.fd + usedB * o.fw * o.fd;
+                if (!best || usedArea > best.usedArea || (usedArea === best.usedArea && total > best.total)) {
+                    best = { usedArea, total, r, a, b: o, stateIndex, state };
+                }
+            }
+        }
+    }
+    if (!best) return null;
+
+    // 按承重限制裁剪件数
+    if (unitWeight > 0 && remainingLoadKg !== Infinity) {
+        const maxByWeight = Math.floor((remainingLoadKg + 0.001) / unitWeight);
+        if (maxByWeight <= 0) return null;
+        if (best.total > maxByWeight) best.total = maxByWeight;
+    }
+
+    // 生成落点
+    const placements = [];
+    const usedCounts = new Map();
+    let placed = 0;
+    for (let rr = 0; rr < best.r; rr++) {
+        const colsA = Math.floor((palletW + gap) / (best.a.fw + gap));
+        for (let c = 0; c < colsA && placed < best.total; c++) {
+            placements.push({ stateIndex: best.stateIndex, colorIdx: best.state.colorIdx, cargoId: best.state.item.id,
+                x: c * (best.a.fw + gap), z: rr * (best.a.fd + gap), fw: best.a.fw, fd: best.a.fd, fh: best.a.fh, support: 1 });
+            placed++;
+        }
+    }
+    if (placed < best.total) {
+        const dStart = best.r * best.a.fd + (best.r - 1) * gap + gap;
+        const restD = palletD - dStart;
+        const rowsB = Math.floor((restD + gap) / (best.b.fd + gap));
+        const colsB = Math.floor((palletW + gap) / (best.b.fw + gap));
+        for (let rr = 0; rr < rowsB && placed < best.total; rr++) {
+            for (let c = 0; c < colsB && placed < best.total; c++) {
+                placements.push({ stateIndex: best.stateIndex, colorIdx: best.state.colorIdx, cargoId: best.state.item.id,
+                    x: c * (best.b.fw + gap), z: dStart + rr * (best.b.fd + gap), fw: best.b.fw, fd: best.b.fd, fh: best.b.fh, support: 1 });
+                placed++;
+            }
+        }
+    }
+    usedCounts.set(best.stateIndex, placements.length);
+    const usedWeightKg = placements.length * unitWeight;
+    return { placements, usedCounts, usedArea: placements.reduce((s, p) => s + p.fw * p.fd, 0), usedWeightKg };
+}
+
+// 单层排布入口：多起点择优（无下层约束时）或 支撑基底约束（传入 lowerPlacements 时）
+function packMixedFlatLayer(palletW, palletD, cargoStates, targetHeight, boxGap, remainingLoadKg = Infinity, lowerPlacements = null) {
+    const gap = Math.max(0, Number(boxGap) || 0);
+
+    // 分支二：支撑基底约束（修层间悬空）
+    if (lowerPlacements && lowerPlacements.length) {
+        const supportRects = lowerPlacements.map(p => ({ x: p.x, z: p.z, w: p.fw, d: p.fd }));
+        const merged = [];
+        for (const p of lowerPlacements) {
+            const r = { x: p.x, z: p.z, w: p.fw, d: p.fd };
+            const last = merged[merged.length - 1];
+            if (last && last.x === r.x && last.w === r.w && last.z + last.d === r.z) {
+                merged[merged.length - 1] = { x: r.x, z: last.z, w: r.w, d: last.d + r.d };
+            } else {
+                merged.push(r);
+            }
+        }
+        const strict = packPalletLayerGreedy(palletW, palletD, cargoStates, targetHeight, gap, remainingLoadKg, merged, { supportRects, minSupport: 1 });
+        // 放宽阶段：剩余数量在整托范围内排布，要求支撑率 ≥ PALLET_LAYER_MIN_SUPPORT
+        const remainStates = cargoStates.map(s => ({ ...s, remaining: s.remaining - (strict.usedCounts.get(cargoStates.indexOf(s)) || 0) }));
+        const whole = [{ x: 0, z: 0, w: palletW + gap, d: palletD + gap }];
+        const relaxed = packPalletLayerGreedy(palletW, palletD, remainStates, targetHeight, gap, remainingLoadKg, whole, { supportRects, minSupport: PALLET_LAYER_MIN_SUPPORT });
+        // 合并（放宽阶段自由矩形从整托开始，需手工剔除与严格阶段重叠的落点）
+        const strictRects = strict.placements.map(p => ({ x: p.x, z: p.z, w: p.fw, d: p.fd }));
+        const extra = [];
+        for (const p of relaxed.placements) {
+            const clash = strictRects.some(q =>
+                Math.min(p.x + p.fw, q.x + q.w) - Math.max(p.x, q.x) > 0.001 &&
+                Math.min(p.z + p.fd, q.z + q.d) - Math.max(p.z, q.z) > 0.001);
+            if (!clash) extra.push(p);
+        }
+        const placements = [...strict.placements, ...extra];
+        const usedCounts = new Map();
+        placements.forEach(p => usedCounts.set(p.stateIndex, (usedCounts.get(p.stateIndex) || 0) + 1));
+        const usedArea = placements.reduce((s, p) => s + p.fw * p.fd, 0);
+        const usedWeightKg = placements.reduce((s, p) => {
+            const state = cargoStates[p.stateIndex];
+            return s + Math.max(0, Number(state?.item?.weight) || 0);
+        }, 0);
+        return { placements, usedCounts, usedArea, usedWeightKg };
+    }
+
+    // 分支一：多起点择优（修层内铺不满）
+    const whole = [{ x: 0, z: 0, w: palletW + gap, d: palletD + gap }];
+    const results = [];
+    for (const optionOrder of [0, 1]) {
+        for (const scoreMode of [0, 1, 2]) {
+            results.push(packPalletLayerGreedy(palletW, palletD, cargoStates, targetHeight, gap, remainingLoadKg, whole, { optionOrder, scoreMode }));
+        }
+    }
+    const stripe = packPalletLayerStripes(palletW, palletD, cargoStates, targetHeight, gap, remainingLoadKg);
+    if (stripe) results.push(stripe);
+    results.sort((x, y) => y.usedArea - x.usedArea || y.placements.length - x.placements.length);
+    return results[0] || { placements: [], usedCounts: new Map(), usedArea: 0, usedWeightKg: 0 };
 }
 
 function calcPalletMode(container, pallet, items, settings, reservedZones, containerVol, availL) {
@@ -4298,9 +4457,10 @@ function calcPalletMode(container, pallet, items, settings, reservedZones, conta
                 : Infinity;
             const remainingLoadKg = Math.min(palletRemainingLoadKg, containerRemainingLoadKg);
             if (remainingLoadKg <= 0.001) break;
+            const lowerPlacements = plan.palletLayers.length ? plan.palletLayers[plan.palletLayers.length - 1].placements : null;
             const candidates = heights.map(height => ({
                 height,
-                packed: packMixedFlatLayer(bestFloor.fw, bestFloor.fd, cargos, height, gap, remainingLoadKg)
+                packed: packMixedFlatLayer(bestFloor.fw, bestFloor.fd, cargos, height, gap, remainingLoadKg, lowerPlacements)
             })).filter(candidate => candidate.packed.placements.length > 0);
             candidates.sort((a, b) =>
                 b.packed.usedArea - a.packed.usedArea ||
@@ -4361,7 +4521,8 @@ function calcPalletMode(container, pallet, items, settings, reservedZones, conta
                     item: cargo.item
                 });
             }
-            y += chosen.height + gap;
+            // 修复：层与层之间应直接接触，箱间隙 gap 只用于同层箱与箱之间，不再累加到竖直方向
+            y += chosen.height;
         }
 
         if (plan.cargos.length > 0) palletPlans.push(plan);
@@ -5247,6 +5408,8 @@ function validatePalletStackResult(result, settings) {
 
         const layers = [...(plan.palletLayers || [])].sort((a,b)=>(Number(a?.y)||0)-(Number(b?.y)||0));
         let previousTop = 0;
+        let previousLayer = null;
+        let previousRects = [];
         layers.forEach((layer, sortedLayerIndex) => {
             const originalLayerIndex = (plan.palletLayers || []).indexOf(layer);
             const y = Number(layer?.y) || 0;
@@ -5277,6 +5440,28 @@ function validatePalletStackResult(result, settings) {
                     }
                 }
             }
+
+            // 修复：层与层之间的支撑校验（原来只查托压托，同托内层间悬空完全漏检）
+            if (previousLayer && rects.length && previousRects.length) {
+                let minSupport = Infinity, worstRect = null;
+                for (const ur of rects) {
+                    let covered = 0;
+                    for (const lr of previousRects) {
+                        const ox = Math.min(ur.x+ur.w, lr.x+lr.w) - Math.max(ur.x, lr.x);
+                        const oz = Math.min(ur.z+ur.d, lr.z+lr.d) - Math.max(ur.z, lr.z);
+                        if (ox > 0 && oz > 0) covered += ox * oz;
+                    }
+                    const ratio = covered / (ur.w * ur.d);
+                    if (ratio < minSupport) { minSupport = ratio; worstRect = ur; }
+                }
+                if (minSupport < 0.5) {
+                    out.warnings.push(`第 ${slotIdx + 1} 托第 ${originalLayerIndex + 1} 层最低单箱支撑率 ${(minSupport*100).toFixed(1)}%（箱 ${Math.round(worstRect.x)}×${Math.round(worstRect.z)}），下层空洞导致大面积悬空，请核对实际堆码稳定性。`);
+                } else if (minSupport < PALLET_LAYER_MIN_SUPPORT) {
+                    out.warnings.push(`第 ${slotIdx + 1} 托第 ${originalLayerIndex + 1} 层最低单箱支撑率 ${(minSupport*100).toFixed(1)}%，建议核查箱体抗压能力。`);
+                }
+            }
+            previousLayer = layer;
+            previousRects = rects;
         });
 
         const planHeight = palletH + getPalletPlanCargoTopMm(plan);
@@ -6111,9 +6296,11 @@ function renderSinglePalletPreview(result, settings, planIndex) {
 
     let previewed = 0;
     const previewCap = 260;
+    let previewOmitted = 0;
     for (const groupData of groupedCells.values()) {
         const remaining = previewCap - previewed;
-        if (remaining <= 0) break;
+        if (remaining <= 0) { previewOmitted += groupData.cells.length; break; }
+        previewOmitted += groupData.cells.length - Math.min(groupData.cells.length, remaining);
         const cells = groupData.cells.slice(0, remaining);
         const pr = groupData.pr;
         const geo = new THREE.BoxGeometry(pr.fw * S, pr.fh * S, pr.fd * S);
@@ -6137,6 +6324,15 @@ function renderSinglePalletPreview(result, settings, planIndex) {
         instanced.instanceMatrix.needsUpdate = true;
         view.group.add(instanced);
         previewed += cells.length;
+    }
+
+    if (previewOmitted > 0) {
+        const omittedLabel = makeTextSprite(`已省略 ${previewOmitted} 件`, {
+            fontsize: 22, color: '#ffffff', bgColor: 'rgba(180,83,9,0.94)',
+            borderColor: 'rgba(146,64,14,1)', scale: 0.14
+        });
+        omittedLabel.position.set(metrics.length * S / 2, metrics.height * S + 0.34, metrics.width * S / 2);
+        view.group.add(omittedLabel);
     }
 
     const label = makeTextSprite(`第${planIndex + 1}托`, {
