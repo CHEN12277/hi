@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>装柜与包装工作台 · 酸性平面 3D 编辑版</title>
+    <title>装柜与包装工作台</title>
     <style id="standalone-utilities">
 *, ::before, ::after {
   --tw-border-spacing-x: 0;
@@ -2641,12 +2641,15 @@ button:focus-visible, select:focus-visible, [tabindex]:focus-visible {
 @media print{#pdfExportBar,.pdf-export-bar{display:none!important}}
 
 /* ===== 剖面位置滑块（3D 视图左侧竖条） ===== */
+/* 酸性主题全局 transition-duration:80ms steps(1,end) 会让滑块每帧位移被延迟跳变，
+   拖动必须豁免：滑杆全部子元素禁用过渡，位移即时生效 */
+#sectionSlider, #sectionSlider *{transition:none!important}
 #sectionSlider{position:absolute;left:10px;top:10%;height:74%;width:30px;z-index:6;touch-action:none;cursor:ns-resize;user-select:none}
 #sectionSlider.hidden{display:none}
 #sectionSlider .ss-rail{position:absolute;left:50%;top:0;bottom:0;width:6px;transform:translateX(-50%);background:#0a0a0a;border:1px solid var(--acid-line,#3e493d)}
 #sectionSlider .ss-rail::before{content:'';position:absolute;inset:0;background-image:repeating-linear-gradient(to bottom,var(--acid-line,#3e493d) 0 1px,transparent 1px 9px);opacity:.5;pointer-events:none}
-#sectionSlider .ss-fill{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(to top,rgba(57,255,20,.5),rgba(57,255,20,.06));pointer-events:none}
-#sectionSlider .ss-knob{position:absolute;left:50%;width:16px;height:16px;margin-left:-8px;margin-top:-8px;background:#0a0a0a;border:2px solid #39ff14;box-shadow:3px 3px 0 #a020f0;pointer-events:none}
+#sectionSlider .ss-fill{position:absolute;left:0;right:0;bottom:0;height:100%;transform-origin:bottom;transform:scaleY(1);will-change:transform;background:linear-gradient(to top,rgba(57,255,20,.5),rgba(57,255,20,.06));pointer-events:none}
+#sectionSlider .ss-knob{position:absolute;left:50%;top:0;width:16px;height:16px;transform:translate3d(-8px,-8px,0);will-change:transform;background:#0a0a0a;border:2px solid #39ff14;box-shadow:3px 3px 0 #a020f0;pointer-events:none}
 #sectionSlider .ss-val{position:absolute;bottom:-17px;left:50%;transform:translateX(-50%);font-size:9px;letter-spacing:.08em;color:#39ff14;white-space:nowrap;pointer-events:none}
 #sectionSlider .ss-cap{position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:9px;letter-spacing:.1em;color:#00ffff;white-space:nowrap;pointer-events:none}
 #sectionSlider:focus-visible{outline:1px dashed #39ff14;outline-offset:3px}
@@ -2949,11 +2952,11 @@ button:focus-visible, select:focus-visible, [tabindex]:focus-visible {
             <div id="canvasWrap" class="flex-1 relative overflow-hidden">
                 <canvas id="canvas3d"></canvas>
                 <div id="sectionSlider" class="hidden" role="slider" tabindex="0"
-                     aria-label="剖切位置（拖动逐渐填满箱体）" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                    <div class="ss-cap">剖面 V4</div>
+                     aria-label="剖切位置（拖动逐渐填满箱体）" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+                    <div class="ss-cap">剖面 V5</div>
                     <div class="ss-rail"><div class="ss-fill"></div></div>
                     <div class="ss-knob"></div>
-                    <div class="ss-val">0%</div>
+                    <div class="ss-val">100%</div>
                 </div>
                 <div id="canvasPlaceholder" class="absolute inset-0 flex items-center justify-center text-sm pointer-events-none select-none">
                     <div class="acid-empty">
@@ -2994,6 +2997,8 @@ button:focus-visible, select:focus-visible, [tabindex]:focus-visible {
                 <div class="grid grid-cols-2 gap-2 text-xs">
                     <div><label class="text-slate-500 mb-1 block">纸管芯直径 (mm)</label>
                         <input type="number" id="coreDia" value="76" min="1" step="any" class="input-field"></div>
+                    <div><label class="text-slate-500 mb-1 block">纸管壁厚 (mm)</label>
+                        <input type="number" id="coreWall" value="10" min="1" step="any" class="input-field"></div>
                     <div><label class="text-slate-500 mb-1 block">材料厚度 (mm)</label>
                         <input type="number" id="matThick" value="0.08" min="0.001" step="any" class="input-field"></div>
                     <div><label class="text-slate-500 mb-1 block">材料长度 (m)</label>
@@ -3002,9 +3007,9 @@ button:focus-visible, select:focus-visible, [tabindex]:focus-visible {
                         <input type="number" id="rollWidth" value="1000" min="1" step="any" class="input-field"></div>
                     <div><label class="text-slate-500 mb-1 block">材料克重 (g/m²)</label>
                         <input type="number" id="matGsm" min="0" step="any" class="input-field" placeholder="选填，如 80"></div>
-                    <div><label class="text-slate-500 mb-1 block">纸管芯重量 (kg) <span id="coreWeightState" style="font-size:10px;color:var(--acid-green)">自动估算</span></label>
+                    <div style="grid-column:1 / -1"><label class="text-slate-500 mb-1 block">纸管芯重量 (kg) <span id="coreWeightState" style="font-size:10px;color:var(--acid-green)">自动估算</span></label>
                         <input type="number" id="coreWeight" min="0" step="0.01" class="input-field" placeholder="自动估算"></div>
-                    <div class="field-help" style="grid-column:1 / -1">填写克重后自动估算整卷毛重 = 克重 × 幅宽 × 长度 + 纸管芯重。纸管芯默认按壁厚 10 mm、密度 0.75 g/cm³ 估算，可直接修改。<button type="button" id="btnCoreWeightAuto" style="margin-left:6px;padding:1px 8px;font-size:10px;border:1px solid var(--glass-border);border-radius:6px;background:rgba(57,255,20,0.08);color:var(--acid-green);cursor:pointer">按尺寸重新估算</button></div>
+                    <div class="field-help" style="grid-column:1 / -1">填写克重后自动估算整卷毛重 = 克重 × 幅宽 × 长度 + 纸管芯重。纸管芯按空心圆柱估算：π/4 × (外径² − 内径²) × 长度 × 密度 0.76 g/cm³（纱管纸）；壁厚常见 8–12 mm，默认 10 mm，可按实际调整。<button type="button" id="btnCoreWeightAuto" style="margin-left:6px;padding:1px 8px;font-size:10px;border:1px solid var(--glass-border);border-radius:6px;background:rgba(57,255,20,0.08);color:var(--acid-green);cursor:pointer">按尺寸重新估算</button></div>
                 </div>
             </section>
 
@@ -5824,6 +5829,8 @@ function createView(canvasId, isMobile) {
     function animate(now = 0) {
         requestAnimationFrame(animate);
         if (document.hidden || wrap.offsetParent === null || now - lastRenderAt < 42) return;
+        // 拖动剖面条时由剖面重绘独占，避免与常规循环双重渲染
+        if (typeof sectionDragging !== 'undefined' && sectionDragging) { lastRenderAt = now; return; }
         lastRenderAt = now;
         controls.update();
         renderer.render(scene, camera);
@@ -6763,12 +6770,17 @@ function getContainerShortCode(container) {
 }
 
 /* ==================== 剖面视图 ====================
-   0%：整柜绿色轮廓线（箱子全透明）；往上拖，箱子从柜头开始渐变成实心，100% 全实心。
+   0%（底部）：整柜绿色轮廓线（箱子全透明）；往上拖，箱子从柜头开始渐变成实心，100%（顶部）全实心。
+   默认停在顶部 100%，与普通实心视图一致。
    边界不是一刀切：每个箱子按自己所在深度做 smoothstep 混合，
    靠近切面的一段内，颜色与透明度连续过渡（柔和渐变带）。
    单材质实现：不用裁剪平面、不复制第二层网格，拖动更跟手。 */
-let sectionCutRatio = 0;
+let sectionCutRatio = 1;
 let sectionUniforms = [];
+let sectionDragging = false;   // 拖动期间暂停 42ms 常规渲染循环，避免双重渲染
+let sectionRenderRaf = 0;
+let lastSectionRenderAt = 0;
+let sectionRailH = 0;          // 缓存轨道高度，拖动中滑块位移不读布局
 
 function sectionInnerDepth() {
     let inner = null;
@@ -6787,8 +6799,10 @@ function sectionInnerDepth() {
 function sectionTarget() {
     const depth = sectionInnerDepth();
     if (!depth) return { cut: 0, soft: 0.1 };
-    const cut = Math.min(Math.max(sectionCutRatio, 0), 1) * depth;
     const soft = Math.max(depth * 0.07, 0.08);
+    const ratio = Math.min(1, Math.max(0, sectionCutRatio));
+    // 两端留出一个渐变带：0% 整柜全轮廓，100% 整柜全实心（含柜门端最远一排）
+    const cut = ratio * (depth + 2 * soft) - soft;
     return { cut: cut, soft: soft };
 }
 
@@ -6853,6 +6867,9 @@ function applySectionStyle(view) {
         if (m.userData.isSection) continue;
         m.userData.isSection = true;
         m.userData.origOnBeforeCompile = m.onBeforeCompile;
+        m.userData.origTransparent = m.transparent;
+        m.userData.origOpacity = m.opacity;
+        m.userData.origDepthWrite = m.depthWrite;
         m.transparent = true;
         m.depthWrite = true;
         m.alphaTest = 0.04;   // 全透明面被丢弃，不写深度 → 能望穿到后面的轮廓
@@ -6877,7 +6894,9 @@ function clearSectionStyle(view) {
         const m = obj.material;
         if (!obj.isInstancedMesh || !m || !m.userData.isSection) continue;
         m.userData.isSection = false;
-        m.transparent = false;
+        m.transparent = !!m.userData.origTransparent;
+        m.opacity = (m.userData.origOpacity != null) ? m.userData.origOpacity : 1;
+        m.depthWrite = (m.userData.origDepthWrite !== undefined) ? m.userData.origDepthWrite : true;
         m.alphaTest = 0;
         m.onBeforeCompile = m.userData.origOnBeforeCompile;
         m.needsUpdate = true;
@@ -6894,13 +6913,20 @@ function updateSectionUI() {
     const hasScene = v0 && v0.cargoGroup && v0.cargoGroup.children.length > 0
         && (!v0.containerGroup || v0.containerGroup.visible);
     el.classList.toggle('hidden', !hasScene);
-    const pct = Math.round(Math.min(1, Math.max(0, sectionCutRatio)) * 100);
+    const ratio = Math.min(1, Math.max(0, sectionCutRatio));
+    const pct = Math.round(ratio * 100);
     const knob = el.querySelector('.ss-knob');
     const fill = el.querySelector('.ss-fill');
     const val = el.querySelector('.ss-val');
-    if (knob) knob.style.top = (100 - pct) + '%';
-    if (fill) fill.style.height = pct + '%';
-    if (val) val.textContent = pct + '%';
+    const rail = el.querySelector('.ss-rail');
+    // 轨道高度缓存：拖动中不读布局；滑块用 transform 位移，只走合成器，不触发重排
+    if (!sectionDragging && rail) {
+        const r = rail.getBoundingClientRect();
+        if (r.height) sectionRailH = r.height;
+    }
+    if (knob) knob.style.transform = 'translate3d(-8px,' + ((1 - ratio) * sectionRailH - 8) + 'px,0)';
+    if (fill) fill.style.transform = 'scaleY(' + ratio + ')';
+    if (val && !sectionDragging) val.textContent = pct + '%';
     el.setAttribute('aria-valuenow', pct);
 }
 
@@ -6908,7 +6934,32 @@ function updateSectionUI() {
 function renderSectionNow() {
     const v = (typeof views !== 'undefined') ? views[0] : null;
     if (!v || !v.renderer || !v.scene || !v.camera) return;
+    lastSectionRenderAt = performance.now();
     try { v.renderer.render(v.scene, v.camera); } catch (e) { /* ignore */ }
+}
+
+/* 拖动期间给 3D 重绘限频（约 30fps）：滑杆指针/填充每帧更新，
+   3D 画布重绘不超过每 28ms 一次，省下的 GPU 时间留给合成器，拖动更跟手。
+   若本帧未到时间窗，挂起到下一帧重试，保证松手前最后一帧不丢。 */
+function queueSectionRender() {
+    if (sectionRenderRaf) return;
+    const tick = () => {
+        sectionRenderRaf = 0;
+        if (performance.now() - lastSectionRenderAt >= 28) renderSectionNow();
+        else sectionRenderRaf = requestAnimationFrame(tick);
+    };
+    sectionRenderRaf = requestAnimationFrame(tick);
+}
+
+/* 拖动期间临时降低渲染分辨率（像素量约 ÷4），大幅削减每帧 GPU 绘制与缓冲拷贝；
+   松手立即恢复全分辨率并补一帧清晰画面。CSS 尺寸不变，只改绘制缓冲。 */
+function setSectionDragResolution(low) {
+    const v = (typeof views !== 'undefined') ? views[0] : null;
+    if (!v || !v.renderer || !v.wrap) return;
+    const w = v.wrap.clientWidth, h = v.wrap.clientHeight;
+    if (!(w > 0 && h > 0)) return;
+    v.renderer.setPixelRatio(low ? 0.5 : 1);
+    v.renderer.setSize(w, h, false);
 }
 
 function setSectionRatio(value) {
@@ -6931,7 +6982,7 @@ function setSectionRatio(value) {
         updateSectionUniforms();
     }
     updateSectionUI();
-    renderSectionNow();
+    queueSectionRender();
 }
 
 function toggleSectionView(enabled) {
@@ -6956,26 +7007,67 @@ function bindSectionSlider() {
     const el = document.getElementById('sectionSlider');
     if (!el) return;
     const rail = el.querySelector('.ss-rail');
-    let active = false, pendingY = null, rafId = 0;
+    const knob = el.querySelector('.ss-knob');
+    const fill = el.querySelector('.ss-fill');
+    const val = el.querySelector('.ss-val');
+    let active = false, pendingY = null, rafId = 0, railRect = null;
+    let lastPaintAt = 0, fpsEma = 0;
+
+    /* 视觉直写：在指针事件里立即写 transform，不等 rAF、不等 3D 重绘。
+       拖动时附带实时帧率（指数滑动平均），供现场验证跟手程度。 */
+    const paint = (ratio, withFps) => {
+        const now = performance.now();
+        if (lastPaintAt) {
+            const fps = 1000 / Math.max(1, now - lastPaintAt);
+            fpsEma = fpsEma ? fpsEma * 0.8 + fps * 0.2 : fps;
+        }
+        lastPaintAt = now;
+        const pct = Math.round(ratio * 100);
+        if (knob) knob.style.transform = 'translate3d(-8px,' + ((1 - ratio) * sectionRailH - 8) + 'px,0)';
+        if (fill) fill.style.transform = 'scaleY(' + ratio + ')';
+        if (val) val.textContent = withFps ? pct + '% · ' + Math.round(fpsEma) + 'fps' : pct + '%';
+    };
 
     const flush = () => {
         rafId = 0;
         if (pendingY === null) return;
         const y = pendingY;
         pendingY = null;
-        const r = rail.getBoundingClientRect();
-        if (!r.height) return;
-        setSectionRatio(1 - (y - r.top) / r.height);
+        // 用按下时缓存的轨道矩形，避免每帧 getBoundingClientRect 强制重排
+        const r = railRect || rail.getBoundingClientRect();
+        const ratio = r.height ? 1 - (y - r.top) / r.height : sectionCutRatio;
+        setSectionRatio(ratio);
     };
     /* 指针事件合并到下一帧：一次拖动不会触发上百次重排/重绘 */
     const queue = y => {
         pendingY = y;
         if (!rafId) rafId = requestAnimationFrame(flush);
     };
+    const endDrag = () => {
+        if (!active) return;
+        active = false;
+        sectionDragging = false;
+        const y = pendingY;
+        pendingY = null;
+        if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+        if (y !== null) {
+            const r = railRect || rail.getBoundingClientRect();
+            if (r.height) setSectionRatio(1 - (y - r.top) / r.height);
+        }
+        setSectionDragResolution(false);
+        renderSectionNow(); // 松手恢复全分辨率，补最终位置一帧清晰画面
+        updateSectionUI(); // 百分比文字恢复纯数字（去掉帧率后缀）
+    };
 
     el.addEventListener('pointerdown', e => {
         if (!views.length || !views[0]) return;
         active = true;
+        sectionDragging = true;
+        railRect = rail.getBoundingClientRect();
+        sectionRailH = railRect.height || sectionRailH;
+        lastPaintAt = 0;
+        fpsEma = 0;
+        setSectionDragResolution(true);
         try { el.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
         queue(e.clientY);
         flush();
@@ -6983,20 +7075,23 @@ function bindSectionSlider() {
     });
     el.addEventListener('pointermove', e => {
         if (!active) return;
+        let y = e.clientY;
         if (typeof e.getCoalescedEvents === 'function') {
             const list = e.getCoalescedEvents();
-            if (list && list.length) { queue(list[list.length - 1].clientY); return; }
+            if (list && list.length) y = list[list.length - 1].clientY;
         }
-        queue(e.clientY);
+        // 方块/填充/百分比在指针事件内即时更新，3D 重绘走独立的限频队列
+        const r = railRect;
+        if (r && r.height) paint(Math.min(1, Math.max(0, 1 - (y - r.top) / r.height)), true);
+        queue(y);
     });
     const stop = e => {
-        active = false;
-        pendingY = null;
+        endDrag();
         try { el.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }
     };
     el.addEventListener('pointerup', stop);
     el.addEventListener('pointercancel', stop);
-    el.addEventListener('lostpointercapture', () => { active = false; pendingY = null; });
+    el.addEventListener('lostpointercapture', endDrag);
     el.addEventListener('keydown', e => {
         if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { setSectionRatio(sectionCutRatio + 0.02); e.preventDefault(); }
         else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { setSectionRatio(sectionCutRatio - 0.02); e.preventDefault(); }
@@ -7053,9 +7148,11 @@ function renderCargoMaxPreview(result, settings) {
         // 6. 相机位置
         resetCargoCamera(container);
 
-        // 7. 如果剖面视图开启，重新应用
+        // 7. 如果剖面视图开启，重新应用；否则预热剖面着色器，首次拖动不再卡顿
         if (sectionViewEnabled) {
             toggleSectionView(true);
+        } else if (v === views[0]) {
+            try { applySectionStyle(v); clearSectionStyle(v); } catch (e) { /* ignore */ }
         }
     });
 
@@ -8138,7 +8235,10 @@ function bindContainerEvents() {
     on('btnSectionView', 'click', function() {
         if (!views.length || !views[0]) { showWarn('请先计算装载方案，再使用柜壁剖面'); return; }
         sectionViewEnabled = !sectionViewEnabled;
-        this.textContent = sectionViewEnabled ? '普通视图' : '剖面视图';
+        // 按钮开剖面时若滑杆在顶部（全实心），回到 0% 展示整柜轮廓；关剖面时滑杆回到顶部
+        if (sectionViewEnabled && sectionCutRatio >= 0.999) sectionCutRatio = 0;
+        if (!sectionViewEnabled) sectionCutRatio = 1;
+        this.textContent = sectionViewEnabled ? '普通视图' : '柜壁剖面';
         this.style.color = sectionViewEnabled ? 'var(--acid-green)' : '';
         this.style.borderColor = sectionViewEnabled ? 'var(--acid-green)' : '';
         toggleSectionView(sectionViewEnabled);
@@ -8280,15 +8380,23 @@ function calcRollDiameter(coreDia, thickness, lengthM) {
     return Math.sqrt(Math.max(0, outerR2)) * 2;
 }
 
-// 纸管芯重量估算：螺旋卷绕纸管，默认壁厚 10 mm、密度 0.75 g/cm³（参考值，可手动覆盖）。
-const CORE_WALL_MM = 10;
-const CORE_DENSITY_G_CM3 = 0.75;
+// 纸管芯重量估算：空心圆柱公式 重量(g) = π/4 × (外径² − 内径²) × 长度 × 密度。
+// 纱管纸（螺旋卷绕纸管）密度按 0.76 g/cm³；壁厚随内径与抗压要求变化，76mm 内径常见 8–12 mm，
+// 默认 10 mm 作为输入项可调，重量结果仍支持手动覆盖。
+const CORE_DENSITY_G_CM3 = 0.76;
+const CORE_WALL_DEFAULT_MM = 10;
 const CARTON_WEIGHT_KG = 0.5; // 纸箱自重预估，用于"含纸箱"毛重口径
 let coreWeightManual = false;
 
-function estimateCoreWeightKg(coreDia, widthMm) {
+function coreWallMm() {
+    const w = numVal('coreWall', CORE_WALL_DEFAULT_MM);
+    return w > 0 ? w : CORE_WALL_DEFAULT_MM;
+}
+function estimateCoreWeightKg(coreDia, widthMm, wallMm) {
     if (!(coreDia > 0 && widthMm > 0)) return 0;
-    const ri = coreDia / 2, ro = ri + CORE_WALL_MM;
+    const wall = wallMm > 0 ? wallMm : CORE_WALL_DEFAULT_MM;
+    const ri = coreDia / 2, ro = ri + wall;
+    // π×(ro²−ri²)×L 与 0.7854×(外径²−内径²)×L 完全等价（π/4≈0.7854）
     const volCm3 = Math.PI * (ro * ro - ri * ri) * widthMm / 1000;
     return volCm3 * CORE_DENSITY_G_CM3 / 1000;
 }
@@ -8306,14 +8414,14 @@ function syncCoreWeightEstimate(force = false) {
     if (!el) return;
     if (force) coreWeightManual = false;
     if (coreWeightManual) { updateCoreWeightState(); return; }
-    const est = estimateCoreWeightKg(numVal('coreDia', 0), numVal('rollWidth', 0));
+    const est = estimateCoreWeightKg(numVal('coreDia', 0), numVal('rollWidth', 0), coreWallMm());
     el.value = est > 0 ? est.toFixed(2) : '';
     updateCoreWeightState();
 }
 
 function readCoreWeightKg() {
     const raw = String(document.getElementById('coreWeight')?.value ?? '').trim();
-    const fallback = estimateCoreWeightKg(numVal('coreDia', 0), numVal('rollWidth', 0));
+    const fallback = estimateCoreWeightKg(numVal('coreDia', 0), numVal('rollWidth', 0), coreWallMm());
     if (raw === '') return { kg: fallback, manual: false };
     const v = Number(raw);
     return { kg: Number.isFinite(v) ? Math.max(0, v) : 0, manual: coreWeightManual };
@@ -8701,7 +8809,8 @@ function doRollCalc() {
     const core = readCoreWeightKg();
     const materialNetKg = gsm > 0 ? gsm * matLength * (rollW / 1000) / 1000 : null;
     const grossRollKg = materialNetKg === null ? null : materialNetKg + core.kg;
-    const cartonRollsKg = grossRollKg === null ? null : grossRollKg * packingOptions.qty + CARTON_WEIGHT_KG;
+    const cartonNetKg = grossRollKg === null ? null : grossRollKg * packingOptions.qty;
+    const cartonRollsKg = grossRollKg === null ? null : cartonNetKg + CARTON_WEIGHT_KG;
     let densityNote = '';
     if (gsm > 0 && matThick > 0) {
         const impliedDensity = gsm / (1000 * matThick);
@@ -8710,17 +8819,17 @@ function doRollCalc() {
         }
     }
     const coreLabel = core.manual ? '手动设定' : '自动估算';
-    const weightDetailHtml = materialNetKg !== null
-        ? '重量估算：材料净重 ' + materialNetKg.toFixed(2) + ' kg + 纸管芯 ' + core.kg.toFixed(2) + ' kg（' + coreLabel + '）= 整卷 ≈ ' + grossRollKg.toFixed(2) + ' kg；本箱 ' + packingOptions.qty + ' 卷 ≈ ' + cartonRollsKg.toFixed(2) + ' kg（含纸箱，纸箱按 0.5 kg 估算）。'
-        : '纸管芯重 ' + core.kg.toFixed(2) + ' kg（' + coreLabel + '）；填写材料克重后可估算整卷毛重。';
-
     const weightCellsHtml = grossRollKg !== null
         ? '<div class="roll-result-main"><span>整卷毛重（估算）</span><strong>≈ ' + grossRollKg.toFixed(2) + ' kg</strong></div>'
-          + '<div class="roll-result-main"><span>本箱毛重（含纸箱）</span><strong>≈ ' + cartonRollsKg.toFixed(2) + ' kg</strong></div>'
+          + '<div class="roll-result-main"><span>整箱净重（' + packingOptions.qty + ' 卷，不含纸箱）</span><strong>≈ ' + cartonNetKg.toFixed(2) + ' kg</strong></div>'
+          + '<div class="roll-result-main full"><span>整箱毛重（含纸箱 0.5 kg）</span><strong>≈ ' + cartonRollsKg.toFixed(2) + ' kg</strong></div>'
         : '';
+    const weightDetailHtml = materialNetKg !== null
+        ? '重量估算：材料净重 ' + materialNetKg.toFixed(2) + ' kg + 纸管芯 ' + core.kg.toFixed(2) + ' kg（' + coreLabel + '）= 整卷 ≈ ' + grossRollKg.toFixed(2) + ' kg；整箱 ' + packingOptions.qty + ' 卷：净重 ≈ ' + cartonNetKg.toFixed(2) + ' kg（不含纸箱），毛重 ≈ ' + cartonRollsKg.toFixed(2) + ' kg（含纸箱）。'
+        : '纸管芯重 ' + core.kg.toFixed(2) + ' kg（' + coreLabel + '）；填写材料克重后可估算整卷毛重。';
     const weightNoteHtml = '<br>' + weightDetailHtml + (densityNote ? '<br><span style="color:var(--acid-yellow)">' + densityNote + '</span>' : '');
 
-    lastRollData = { rollDia, rollW, coreDia, matThick, matLength, gsm, coreKg: core.kg, coreWeightManual: core.manual, materialNetKg, grossRollKg, recommendation };
+    lastRollData = { rollDia, rollW, coreDia, coreWall: coreWallMm(), matThick, matLength, gsm, coreKg: core.kg, coreWeightManual: core.manual, materialNetKg, grossRollKg, recommendation };
 
     resultEl.innerHTML = `
         <div class="roll-result-grid">
@@ -8797,9 +8906,9 @@ on('toggleCustomBox', 'click', function() {
 
 on('btnCalcRoll', 'click', doRollCalc);
 
-['coreDia', 'matThick', 'matLength', 'rollWidth', 'rollQty', 'rollCartonWall'].forEach(id => {
+['coreDia', 'coreWall', 'matThick', 'matLength', 'rollWidth', 'rollQty', 'rollCartonWall'].forEach(id => {
     on(id, 'input', () => {
-        if (id === 'coreDia' || id === 'rollWidth') syncCoreWeightEstimate();
+        if (id === 'coreDia' || id === 'coreWall' || id === 'rollWidth') syncCoreWeightEstimate();
         doRollCalc();
     });
 });
@@ -11561,6 +11670,7 @@ const PdfExport = (() => {
             blocks: [
                 { type: 'kv', title: '卷料参数', en: 'ROLL SPEC', pairs: [
                     ['纸管内径', n1(r.coreDia) + ' mm'],
+                    ['纸管壁厚', n1(r.coreWall || 10) + ' mm'],
                     ['卷料宽度', n1(r.rollW) + ' mm'],
                     ['材料克重', Number(r.gsm) > 0 ? n1(r.gsm) + ' g/m²' : '未填写'],
                     ['材料长度 / 厚度', n1(r.matLength || 0) + ' m / ' + n2(r.matThick || 0) + ' mm'],
@@ -11568,12 +11678,13 @@ const PdfExport = (() => {
                     ['纸管芯重量', n2(r.coreKg || 0) + ' kg（' + (r.coreWeightManual ? '手动设定' : '自动估算') + '）'],
                     ...(r.grossRollKg != null ? [
                         ['整卷毛重（估算）', '≈ ' + n2(r.grossRollKg) + ' kg', 1],
-                        ['本箱毛重（含纸箱）', '≈ ' + n2(r.grossRollKg * po.qty + CARTON_WEIGHT_KG) + ' kg（纸箱按 0.5 kg 估算）']
+                        ['整箱净重（不含纸箱）', '≈ ' + n2(r.grossRollKg * po.qty) + ' kg（' + n0(po.qty) + ' 卷）'],
+                        ['整箱毛重（含纸箱）', '≈ ' + n2(r.grossRollKg * po.qty + CARTON_WEIGHT_KG) + ' kg（纸箱按 0.5 kg 估算）']
                     ] : []),
                     ['每箱卷数', n0(po.qty) + ' 卷'],
                     ['纸板壁厚', n1(po.wall) + ' mm / 侧'],
                     ['卷间隙 / 工艺余量', '5 mm / 10 mm']
-                ], note: '整卷毛重 = 克重 × 幅宽 × 长度 + 纸管芯重；纸管芯默认按壁厚 10 mm、密度 0.75 g/cm³ 估算，可手动调整。' },
+                ], note: '整卷毛重 = 克重 × 幅宽 × 长度 + 纸管芯重；纸管芯按空心圆柱公式 π/4 × (外径² − 内径²) × 长度 × 密度 0.76 g/cm³（纱管纸）估算，壁厚默认 10 mm 可调，重量可手动调整。' },
                 { type: 'kv', title: '纸箱与排布', en: 'CARTON & LAYOUT', pairs: [
                     ['纸箱外轮廓', rec.outerL + ' × ' + rec.outerW + ' × ' + rec.outerH + ' mm', 1],
                     ['纸箱内尺寸', n1(rec.innerL) + ' × ' + n1(rec.innerW) + ' × ' + n1(rec.innerH) + ' mm'],
@@ -11792,7 +11903,7 @@ const PdfExport = (() => {
 PdfExport.init();
 bindSectionSlider();
 updateSectionUI();
-console.log('[build] section v4 · progressive-fill ·', new Date().toISOString().slice(0, 16));
+console.log('[build] section v5 · progressive-fill · top-default · drag-smooth ·', new Date().toISOString().slice(0, 16));
 
 </script></body>
 </html>
